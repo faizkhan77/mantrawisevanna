@@ -1,0 +1,4 @@
+vanna[fastapi,openai,google,mysql,chromadb]
+python-dotenv
+streamlit
+uvicorn

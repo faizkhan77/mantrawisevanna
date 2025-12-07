@@ -1,0 +1,10 @@
+venv/
+
+.env
+
+vanna_storage/
+
+__pycache__
+
+
+4a647de78d0d1b74/
