@@ -143,8 +143,104 @@
 {
   "input": "Forecast the check-in for the next 90 days.",
   "query": "SELECT DATE(ArrivalWhen) AS ArrivalDate, COUNT(*) AS ExpectedCheckIns FROM pmsstays WHERE ArrivalWhen BETWEEN CURDATE() AND DATE_ADD(CURDATE(), INTERVAL 90 DAY) AND StayStatus NOT LIKE '%Cancelled%' GROUP BY DATE(ArrivalWhen) ORDER BY ArrivalDate;"
+},
+
+{
+  "input": "Are there any anomalies in the number of future bookings?",
+  "query": "WITH future_bookings AS ( SELECT DATE(ArrivalWhen) AS StayDate, COUNT(*) AS CountBookings FROM pmsstays WHERE ArrivalWhen > CURDATE() GROUP BY DATE(ArrivalWhen) ), baseline AS ( SELECT AVG(day_count) AS AvgDaily FROM ( SELECT DATE(ArrivalWhen) AS Day, COUNT(*) AS day_count FROM pmsstays WHERE ArrivalWhen BETWEEN DATE_SUB(CURDATE(), INTERVAL 180 DAY) AND CURDATE() GROUP BY DATE(ArrivalWhen) ) x ) SELECT f.StayDate, f.CountBookings FROM future_bookings f CROSS JOIN baseline b WHERE f.CountBookings > b.AvgDaily * 1.5 OR f.CountBookings < b.AvgDaily * 0.5 ORDER BY f.StayDate;"
 }
 
+,
+{
+  "input": "List VIP guests who haven't returned in the last 12 months.",
+  "query": "SELECT p.PId, p.FirstName, p.LastName, p.VIPStatus, (SELECT MAX(s.ArrivalWhen) FROM pmsstays s WHERE s.ProfileId = p.PId) AS LastArrival FROM profiles p WHERE p.IsVIP = TRUE HAVING LastArrival < DATE_SUB(CURDATE(), INTERVAL 12 MONTH) OR LastArrival IS NULL;"
+}
+
+,
+{
+  "input": "From which country and state our VIP customers are coming from?",
+  "query": "SELECT PrimaryCountry AS Country, PrimaryState AS State, COUNT(*) AS VIPCount FROM profiles WHERE IsVIP = TRUE GROUP BY PrimaryCountry, PrimaryState ORDER BY VIPCount DESC;"
+},
+
+{
+  "input": "List all top spenders that are VIP.",
+  "query": "SELECT PId, FirstName, LastName, VIPStatus, CAST(TotalSpent AS DECIMAL(10,2)) AS LifetimeSpend FROM profiles WHERE IsVIP = TRUE ORDER BY LifetimeSpend DESC;"
+}
+,
+{
+  "input": "List all top spenders who haven't returned in the last 12 months.",
+  "query": "SELECT p.PId, p.FirstName, p.LastName, CAST(p.TotalSpent AS DECIMAL(10,2)) AS LifetimeSpend, (SELECT MAX(s.ArrivalWhen) FROM pmsstays s WHERE s.ProfileId = p.PId) AS LastArrival FROM profiles p HAVING (LastArrival < DATE_SUB(CURDATE(), INTERVAL 12 MONTH) OR LastArrival IS NULL) ORDER BY LifetimeSpend DESC;"
+}
+
+,
+{
+  "input": "Which guests are eligible for upsell opportunities based on booking history?",
+  "query": "WITH last_year AS ( SELECT ProfileId, COUNT(*) AS StayCount, SUM(CAST(TotalRevenue AS DECIMAL(10,2))) AS Revenue FROM pmsstays WHERE ArrivalWhen >= DATE_SUB(CURDATE(), INTERVAL 12 MONTH) GROUP BY ProfileId ), avg_rev AS ( SELECT AVG(Revenue) AS AvgRevenue FROM last_year ), future_stays AS ( SELECT DISTINCT ProfileId FROM pmsstays WHERE ArrivalWhen > CURDATE() ) SELECT p.PId, p.FirstName, p.LastName, ly.StayCount, ly.Revenue FROM profiles p JOIN last_year ly ON ly.ProfileId = p.PId JOIN future_stays fs ON fs.ProfileId = p.PId CROSS JOIN avg_rev ar WHERE ly.StayCount >= 2 AND ly.Revenue > ar.AvgRevenue ORDER BY ly.Revenue DESC;"
+},
+
+{
+  "input": "Which spa treatments are most popular by guest demographic?",
+  "query": "SELECT p.Gender, p.PrimaryCountry AS Country, s.ActivityName AS Treatment, COUNT(*) AS TotalBookings FROM spabookings s JOIN profiles p ON p.PId = s.ProfileId WHERE s.IsCancelled = FALSE GROUP BY p.Gender, p.PrimaryCountry, s.ActivityName ORDER BY TotalBookings DESC;"
+}
+,
+{
+  "input": "What is the average spend per guest in the spa over the past 3 months?",
+  "query": "SELECT AVG(GuestAvg) AS AvgSpendPerGuest FROM ( SELECT ProfileId, AVG(CAST(Price AS DECIMAL(10,2))) AS GuestAvg FROM spabookings WHERE StartWhen >= DATE_SUB(CURDATE(), INTERVAL 3 MONTH) AND IsCancelled = FALSE GROUP BY ProfileId ) x;"
+}
+
+,
+
+{
+  "input": "Which therapists have the highest number of rebookings?",
+  "query": "SELECT ProviderName, COUNT(*) AS RebookingCount FROM spabookings WHERE ProviderName IS NOT NULL AND IsCancelled = FALSE GROUP BY ProfileId, ProviderName HAVING COUNT(*) > 1 ORDER BY RebookingCount DESC;"
+}
+,
+
+{
+  "input": "Which therapists have the highest number of repeat customers?",
+  "query": "SELECT ProviderName, COUNT(DISTINCT ProfileId) AS RepeatGuestCount FROM spabookings WHERE ProviderName IS NOT NULL GROUP BY ProviderName HAVING COUNT(DISTINCT ProfileId) > 1 ORDER BY RepeatGuestCount DESC;"
+}
+
+,
+
+{
+  "input": "Which tee times are in highest demand throughout the week?",
+  "query": "SELECT DAYNAME(BookedDate) AS Weekday, HOUR(BookedDate) AS Hour, COUNT(*) AS TotalBookings FROM teetimebookings WHERE IsCancelled = 0 GROUP BY DAYNAME(BookedDate), HOUR(BookedDate) ORDER BY TotalBookings DESC;"
+}
+,
+{
+  "input": "Which guest demographic generate the most revenue?",
+  "query": "SELECT p.Gender, p.PrimaryCountry AS Country, SUM(CAST(s.TotalRevenue AS DECIMAL(10,2))) AS TotalRevenue FROM pmsstays s JOIN profiles p ON p.PId = s.ProfileId WHERE s.IsCancelled = FALSE GROUP BY p.Gender, p.PrimaryCountry ORDER BY TotalRevenue DESC;"
+},
+
+{
+  "input": "Show repeat visit rate of golf players over the last 6 months.",
+  "query": "WITH visits AS ( SELECT ProfileId, COUNT(*) AS VisitCount FROM teetimebookings WHERE BookedDate >= DATE_SUB(CURDATE(), INTERVAL 6 MONTH) AND IsCancelled = 0 GROUP BY ProfileId ) SELECT COUNT(*) AS TotalGolfGuests, SUM(CASE WHEN VisitCount > 1 THEN 1 ELSE 0 END) AS RepeatPlayers, (SUM(CASE WHEN VisitCount > 1 THEN 1 ELSE 0 END) / COUNT(*)) * 100 AS RepeatRatePercent FROM visits;"
+},
+
+{
+  "input": "Which are the most common dietary restrictions?",
+  "query": "SELECT CustomerDietaryRestrictions AS Restriction, COUNT(*) AS Count FROM restaurantreservations WHERE CustomerDietaryRestrictions IS NOT NULL AND CustomerDietaryRestrictions != '' GROUP BY CustomerDietaryRestrictions ORDER BY Count DESC;"
+}
+
+
+,
+{
+  "input": "What times of day are our outlets the busiest?",
+  "query": "SELECT HOUR(StartWhen) AS HourOfDay, COUNT(*) AS TotalReservations FROM restaurantreservations WHERE IsCancelled = FALSE GROUP BY HOUR(StartWhen) ORDER BY TotalReservations DESC;"
+}
+,
+
+{
+  "input": "Compare performance between the rooftop bar and lobby lounge.",
+  "query": "SELECT RestaurantName, COUNT(*) AS Reservations, SUM(CAST(TotalSpent AS DECIMAL(10,2))) AS TotalRevenue FROM restaurantreservations WHERE RestaurantName IN ('Rooftop Bar', 'Lobby Lounge') GROUP BY RestaurantName ORDER BY TotalRevenue DESC;"
+}
+,
+
+{
+  "input": "What percentage of in-house guests are dining at our restaurants?",
+  "query": "WITH inhouse AS ( SELECT DISTINCT ProfileId FROM pmsstays WHERE CURDATE() BETWEEN DATE(ArrivalWhen) AND DATE(DepartureWhen) AND IsCancelled = FALSE ), diners AS ( SELECT DISTINCT ProfileId FROM restaurantreservations WHERE DATE(StartWhen) = CURDATE() AND IsCancelled = FALSE ) SELECT (SELECT COUNT(*) FROM diners) / (SELECT COUNT(*) FROM inhouse) * 100 AS DiningPercentage;"
+}
 
 
 
