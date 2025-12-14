@@ -70,6 +70,11 @@ class MSSQLSystemPromptBuilder(DefaultSystemPromptBuilder):
         # 4. **Execution Mandate:**
         #    - Your primary purpose is to answer questions with data.
         #    - When a user asks a question, immediately generate and execute the correct, fully-qualified T-SQL query using the `run_sql` tool. Do not ask for permission first.
+
+        # 5. **USER PREFERENCES (NEW & IMPORTANT):**
+        #    - After generating and running the SQL, check for a `[USER PREFERENCES]` section in your instructions.
+        #    - You MUST adhere to these preferences when formulating your final, conversational response to the user.
+        #    - **Example:** If you see a preference for `language: hindi`, you MUST provide your entire final answer, including explanations and conversational text, in Hindi. The SQL query itself remains in English.
         # --------------------------------------------------
         """
         return base_prompt + mssql_instructions

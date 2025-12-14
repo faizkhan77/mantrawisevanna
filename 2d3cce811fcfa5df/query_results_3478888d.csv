@@ -1,0 +1,4 @@
+COLUMN_NAME,DATA_TYPE
+stay_id,bigint
+arrival_date,datetime
+total_revenue,decimal

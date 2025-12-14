@@ -1,0 +1,10 @@
+COLUMN_NAME,DATA_TYPE
+profile_id,bigint
+first_name,nvarchar
+last_name,nvarchar
+email,nvarchar
+country,nvarchar
+is_vip,int
+lifetime_spend,decimal
+total_stays,int
+total_room_revenue,decimal

@@ -12,8 +12,12 @@ class PreferenceAwareLlmService(LlmService):
         request: LlmRequest,
         user: User | None = None
     ) -> LlmRequest:
+        # --- START OF DEBUGGING BLOCK ---
+        print("\n" + "="*50)
         if user:
+            print(f"🕵️  [DEBUG] Preference Service: Preparing request for user: '{user.id}'")
             prefs = preference_store.get_prefs(user.id)
+            print(f"📚 [DEBUG] Preference Service: Found preferences in store: {prefs}")
             if prefs:
                 pref_text = "\n\n[USER PREFERENCES — STRICTLY FOLLOW]:\n"
                 for k, v in prefs.items():
@@ -22,18 +26,23 @@ class PreferenceAwareLlmService(LlmService):
                 for msg in request.messages:
                     if msg.role == "system":
                         msg.content += pref_text
+                        print("✅ [DEBUG] Preference Service: Successfully injected preferences into system prompt.")
                         break
+            else:
+                print("⚠️  [DEBUG] Preference Service: No preferences found for this user. Nothing to inject.")
+        else:
+            print("👤 [DEBUG] Preference Service: No user identified in request.")
+        print("="*50 + "\n")
+        # --- END OF DEBUGGING BLOCK ---
 
         return await self.inner.prepare_request(request, user)
 
-    # ✅ Correct: normal awaitable
+    # ... rest of the class remains the same
     async def send_request(self, request: LlmRequest):
         return await self.inner.send_request(request)
 
-    # ✅ Correct: return async iterator directly (NO await, NO async def body logic)
     def stream_request(self, request: LlmRequest):
         return self.inner.stream_request(request)
 
-    # ✅ Pass-through
     def validate_tools(self, tools):
         return self.inner.validate_tools(tools)
