@@ -1,0 +1,43 @@
+TABLE_CATALOG,TABLE_SCHEMA,TABLE_NAME,TABLE_TYPE
+MantraWise,dbo,ProfileAssociations,BASE TABLE
+MantraWise,analytics_staging,stg_courtbookings,VIEW
+MantraWise,analytics_staging,stg_lessonbookings,VIEW
+MantraWise,analytics_staging,stg_pmsstays,VIEW
+MantraWise,analytics_staging,stg_otherreservations,VIEW
+MantraWise,analytics_staging,stg_poolbeachamenityreservations,VIEW
+MantraWise,analytics_staging,stg_profilemonthlyspend,VIEW
+MantraWise,analytics_staging,stg_profiles,VIEW
+MantraWise,analytics_staging,stg_restaurantreservations,VIEW
+MantraWise,analytics_staging,stg_spabookings,VIEW
+MantraWise,analytics_staging,stg_transportationreservations,VIEW
+MantraWise,analytics_staging,stg_teetimebookings,VIEW
+MantraWise,analytics_staging,stg_vipcodes,VIEW
+MantraWise,dbo,VIPCodes,BASE TABLE
+MantraWise,analytics_analytics,fct_booking_trends,BASE TABLE
+MantraWise,dbo,TeeTimeBookings,BASE TABLE
+MantraWise,analytics_analytics,dim_guests,BASE TABLE
+MantraWise,analytics_analytics,fct_daily_operations_forecast,BASE TABLE
+MantraWise,analytics_analytics,fct_recreation_analytics,BASE TABLE
+MantraWise,dbo,Settings,BASE TABLE
+MantraWise,analytics_analytics,fct_dining_analytics,BASE TABLE
+MantraWise,analytics_analytics,fct_golf_analytics,BASE TABLE
+MantraWise,analytics_analytics,fct_spa_analytics,BASE TABLE
+MantraWise,dbo,sysdiagrams,BASE TABLE
+MantraWise,analytics_analytics,fct_daily_business_performance,BASE TABLE
+MantraWise,dbo,Profiles,BASE TABLE
+MantraWise,dbo,ProfileVisitsPerYear,BASE TABLE
+MantraWise,dbo,RemovedProfileMergeCandidates,BASE TABLE
+MantraWise,dbo,CourtBookings,BASE TABLE
+MantraWise,dbo,LessonBookings,BASE TABLE
+MantraWise,dbo,OtherReservations,BASE TABLE
+MantraWise,dbo,TransportationReservations,BASE TABLE
+MantraWise,dbo,ProfileMonthlySpend,BASE TABLE
+MantraWise,dbo,PMSStays,BASE TABLE
+MantraWise,dbo,PoolBeachAmenityReservations,BASE TABLE
+MantraWise,dbo,Preferences,BASE TABLE
+MantraWise,dbo,RestaurantReservations,BASE TABLE
+MantraWise,dbo,SpaBookings,BASE TABLE
+MantraWise,dbo,SpaPreferences,BASE TABLE
+MantraWise,dbo,PMSPreferences,BASE TABLE
+MantraWise,dbo,PMSStayProfileAssociations,BASE TABLE
+MantraWise,dbo,ProfileAssociationRelationships,BASE TABLE

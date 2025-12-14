@@ -1,4 +1,9 @@
-vanna[fastapi,openai,google,mysql,chromadb]
+vanna[fastapi,openai,google,mysql,chromadb,mssql]
 python-dotenv
 streamlit
 uvicorn
+pandas
+pyodbc
+sqlalchemy
+chromadb
+vanna

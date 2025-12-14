@@ -2,36 +2,52 @@ import os
 import json
 import asyncio
 import inspect
-from typing import Any, Dict, List, Tuple
+from typing import Any, Dict, List
+import urllib.parse
 
 import pandas as pd
 from sqlalchemy import create_engine
 from sqlalchemy.engine import Engine
 
-from vanna_core.agent import agent_memory
+from vanna_core.agent import agent_memory, vanna_agent
 from vanna_core.config import Config
 
 # ---------------- CONFIG ----------------
-DDL_FILE_PATH = "database/tables.sql"
+DDL_FILE_PATH = "database/script.sql"
 JSON_FILE_PATH = "database/examples.json"
-DDL_CHUNK_SIZE = 4000  # characters
+DDL_CHUNK_SIZE = 8000 
 
-
-# ---------------- DB ENGINE -------------
+# ---------------- DB ENGINE (MS SQL) -------------
 def get_sqlalchemy_engine() -> Engine:
-    url = (
-        f"mysql+pymysql://{Config.DB_USER}:{Config.DB_PASSWORD}"
-        f"@{Config.DB_HOST}:{Config.DB_PORT}/{Config.DB_NAME}"
-    )
+    driver = Config.DB_DRIVER.replace(' ', '+')
+    
+    if not Config.DB_USER:
+        # Windows Authentication
+        url = (
+            f"mssql+pyodbc://@"
+            f"{Config.DB_HOST}/{Config.DB_NAME}"
+            f"?driver={driver}"
+            "&trusted_connection=yes"
+            "&TrustServerCertificate=yes"
+        )
+    else:
+        # SQL Authentication
+        encoded_pwd = urllib.parse.quote_plus(Config.DB_PASSWORD)
+        url = (
+            f"mssql+pyodbc://{Config.DB_USER}:{encoded_pwd}"
+            f"@{Config.DB_HOST}:{Config.DB_PORT}/{Config.DB_NAME}"
+            f"?driver={driver}"
+            "&TrustServerCertificate=yes"
+        )
+        
     return create_engine(url)
 
 
 # ---------------- MOCK CONTEXT ----------
 class MockUser:
     id = "admin_trainer"
-    email = "admin@localhost"
+    email = "admin@mantrawise.com"
     group_memberships = ["admin"]
-
 
 class MockContext:
     @property
@@ -41,11 +57,6 @@ class MockContext:
 
 # --------------- SMART CALL -------------
 async def smart_call(method, **kwargs) -> Any:
-    """
-    Generic adapter that maps our kwargs into whatever signature the
-    underlying tool method actually uses. Prevents 'unexpected kwarg'
-    issues across Vanna versions.
-    """
     sig = inspect.signature(method)
     bound_args: Dict[str, Any] = {}
 
@@ -61,18 +72,15 @@ async def smart_call(method, **kwargs) -> Any:
     for param in sig.parameters:
         if param == "self":
             continue
-
         if param in kwargs:
             bound_args[param] = kwargs[param]
             continue
-
         found = False
         for key, aliases in arg_mapping.items():
             if param in aliases and key in kwargs:
                 bound_args[param] = kwargs[key]
                 found = True
                 break
-
         if not found and param == "context":
             bound_args["context"] = kwargs.get("context")
 
@@ -81,184 +89,82 @@ async def smart_call(method, **kwargs) -> Any:
     return method(**bound_args)
 
 
-# --------------- SCHEMA CATEGORY MAPPING (BASED ON YOUR REAL SYSTEM) -------------
-SCHEMA_CATEGORIES: Dict[str, List[str]] = {
-    "Guest Profile": [
-        "profiles",
-        "profileassociations",
-        "profileassociationrelationships",
-        "preferences",
-        "profilemonthlyspend",
-        "profilevisitsperyear",
-        "removedprofilemergecandidates",
-        "vipcodes",
-    ],
-    "Hotel / PMS Stays": ["pmsstays", "pmsstayprofileassociations", "pmspreferences"],
-    "Dining": ["restaurantreservations"],
-    "Spa & Wellness": ["spabookings", "spapreferences"],
-    "Recreation & Activities": [
-        "courtbookings",
-        "lessonbookings",
-        "poolbeachamenityreservations",
-        "otherreservations",
-        "teetimebookings",
-    ],
-    "Transport": ["transportationreservations"],
-    "System": ["settings", "sysdiagrams"],
-}
-
-
-def infer_category(table_name: str) -> str:
-    for cat, tables in SCHEMA_CATEGORIES.items():
-        if table_name.lower() in tables:
-            return cat
-    return "Uncategorized"
-
-
-# --------------- DOMAIN-AWARE DESCRIPTIONS ----------------
-def generate_domain_description(
-    table_name: str, columns: List[Tuple[str, str]]
-) -> str:
-    """
-    Creates a useful semantic description instead of:
-    'The table X has columns Y'.
-    """
-    category = infer_category(table_name)
-    col_list = ", ".join([f"{c} ({t})" for c, t in columns])
-
-    descriptions: Dict[str, str] = {
-        "profiles": "This table stores the master guest profile, including contact details, demographics, loyalty data, spend history, and VIP information.",
-        "pmsstays": "This table stores hotel stay records: arrival, departure, room info, folio, rates, revenue, and PMS confirmation numbers.",
-        "restaurantreservations": "Guest dining reservations, party size, dietary restrictions, restaurant info, spending, and cancellation data.",
-        "spabookings": "Spa appointments including treatment type, provider info, guest notes, wellness forms, and cancellation info.",
-        "courtbookings": "Court reservations (tennis, padel, etc.) including start/end time, court type, instructor, number of players and revenue.",
-        "lessonbookings": "Lesson bookings (golf, fitness, sports) including instructor, facility, lesson type and sales value.",
-        "teetimebookings": "Golf tee time bookings including course, holes, players, caddy selection, and booking status.",
-        "poolbeachamenityreservations": "Pool and beach amenity bookings (cabanas, daybeds) with time, pricing, and guest details.",
-        "otherreservations": "Misc non-categorized activity reservations linked to a guest profile.",
-        "transportationreservations": "Transportation bookings including driver, destination, number of guests, and spend.",
-    }
-
-    if table_name in descriptions:
-        base = descriptions[table_name]
-    else:
-        base = (
-            f"This table belongs to category '{category}' and contains operational records."
-        )
-
-    return f"{base} Columns include: {col_list}"
-
-
-# --------------- TRAINING: TEXT (DDL + LIVE SCHEMA + DOMAIN SEMANTICS) ------------
+# --------------- TRAINING: TEXT (DDL + LIVE SCHEMA) ------------
 async def train_ddl_and_docs(ctx: MockContext) -> None:
-    """
-    1) Load and chunk the DDL from tables.sql into memory.
-    2) Introspect INFORMATION_SCHEMA and store semantic docs per table.
-    """
     text_method = getattr(agent_memory, "save_text_memory", None)
-
     if not text_method:
-        print("❌ Missing 'save_text_memory' on agent_memory. Aborting text training.")
         return
 
-    # ---- 1. Train DDL raw (chunked) ----
+    # 1. DDL (Loads raw DDL from file - usually just dbo)
     if os.path.exists(DDL_FILE_PATH):
-        print(f"📜 Loading DDL from {DDL_FILE_PATH} ...")
         with open(DDL_FILE_PATH, "r", encoding="utf-8") as f:
             ddl = f.read()
-
-        chunks: List[str] = [
-            ddl[i : i + DDL_CHUNK_SIZE] for i in range(0, len(ddl), DDL_CHUNK_SIZE)
-        ]
-        print(f"🧩 DDL size = {len(ddl)} chars, split into {len(chunks)} chunks.")
-
+        chunks = [ddl[i : i + DDL_CHUNK_SIZE] for i in range(0, len(ddl), DDL_CHUNK_SIZE)]
         for idx, chunk in enumerate(chunks, start=1):
-            doc_text = f"-- DDL chunk {idx}/{len(chunks)}\n{chunk}"
+            doc_text = f"-- MS SQL DDL chunk {idx}/{len(chunks)}\n{chunk}"
             try:
                 await smart_call(text_method, text=doc_text, context=ctx)
-            except Exception as e:
-                print(f"❌ Error saving DDL chunk {idx}: {e}")
-                # Keep going; one failed chunk is not fatal
-
+            except Exception:
+                pass
         print("✅ DDL chunks saved.")
-    else:
-        print(f"⚠ No DDL file found at {DDL_FILE_PATH}; skipping DDL training.")
 
-    # ---- 2. Train schema with semantic docs ----
-    print("🔌 Introspecting live schema via INFORMATION_SCHEMA ...")
+    # 2. Introspection (Crucial Update for DBT)
+    print("🔌 Introspecting live schema (dbo + analytics_analytics) ...")
     try:
         engine = get_sqlalchemy_engine()
         with engine.connect() as conn:
-            df = pd.read_sql(
-                f"""
-                SELECT TABLE_NAME, COLUMN_NAME, DATA_TYPE
+            # Query multiple schemas
+            query = f"""
+                SELECT TABLE_SCHEMA, TABLE_NAME, COLUMN_NAME, DATA_TYPE
                 FROM INFORMATION_SCHEMA.COLUMNS
-                WHERE TABLE_SCHEMA = '{Config.DB_NAME}'
-                ORDER BY TABLE_NAME, ORDINAL_POSITION
-                """,
-                conn,
-            )
+                WHERE TABLE_CATALOG = '{Config.DB_NAME}'
+                  AND TABLE_SCHEMA IN ('dbo', 'analytics_analytics')
+                ORDER BY TABLE_SCHEMA, TABLE_NAME, ORDINAL_POSITION
+            """
+            df = pd.read_sql(query, conn)
     except Exception as e:
         print(f"❌ Schema fetch failed: {e}")
         return
 
     if df.empty:
-        print("⚠ INFORMATION_SCHEMA returned no columns for this DB. Check permissions.")
+        print("⚠ INFORMATION_SCHEMA returned no columns. Check DB_NAME/Permissions.")
         return
 
-    grouped = df.groupby("TABLE_NAME")
+    # Group by Schema AND Table to differentiate 'dbo.profiles' from 'analytics.dim_guests'
+    grouped = df.groupby(["TABLE_SCHEMA", "TABLE_NAME"])
     table_count = 0
 
-    for table, group in grouped:
+    for (schema, table), group in grouped:
         columns = [(str(r["COLUMN_NAME"]), str(r["DATA_TYPE"])) for _, r in group.iterrows()]
-        doc = generate_domain_description(table, columns)
-
+        col_list = ", ".join([f"{c} ({t})" for c, t in columns])
+        
+        # Explicitly mention the schema in the documentation
+        doc = f"Table '[{schema}].[{table}]' contains columns: {col_list}."
+        
         try:
             await smart_call(text_method, text=doc, context=ctx)
             table_count += 1
-        except Exception as e:
-            print(f"❌ Error saving schema doc for table '{table}': {e}")
+        except Exception:
+            pass
 
     print(f"✅ Semantic schema training complete ({table_count} tables).")
 
 
 # --------------- TRAIN SQL EXAMPLES ----------------
 async def train_sql_examples(ctx: MockContext) -> None:
-    """
-    Train question → tool_usage mappings from examples.json.
-    """
     method = getattr(agent_memory, "save_tool_usage", None)
-    if not method:
-        print("⚠ No 'save_tool_usage' method found on agent_memory. Skipping SQL examples.")
-        return
-
-    if not os.path.exists(JSON_FILE_PATH):
-        print(f"⚠ No examples.json found at {JSON_FILE_PATH}. Skipping SQL examples.")
-        return
+    if not method: return
+    if not os.path.exists(JSON_FILE_PATH): return
 
     with open(JSON_FILE_PATH, "r", encoding="utf-8") as f:
-        try:
-            examples = json.load(f)
-        except json.JSONDecodeError as e:
-            print(f"❌ Failed to parse {JSON_FILE_PATH}: {e}")
-            return
+        examples = json.load(f)
 
-    if not isinstance(examples, list):
-        print("⚠ examples.json is not a list. Skipping.")
-        return
-
-    print(f"💡 Training {len(examples)} SQL examples from {JSON_FILE_PATH} ...")
+    print(f"💡 Training {len(examples)} SQL examples ...")
     success_count = 0
-    error_count = 0
-
-    for idx, ex in enumerate(examples, start=1):
+    for ex in examples:
         q = ex.get("input")
         sql = ex.get("query")
-
-        if not q or not sql:
-            print(f"⚠ Example #{idx} missing 'input' or 'query'; skipping.")
-            continue
-
+        if not q or not sql: continue
         try:
             await smart_call(
                 method,
@@ -269,26 +175,20 @@ async def train_sql_examples(ctx: MockContext) -> None:
                 success=True,
             )
             success_count += 1
-        except Exception as e:
-            error_count += 1
-            print(f"❌ Error saving SQL example #{idx}: {e}")
-
-    print(f"✅ SQL examples trained. OK={success_count}, Failed={error_count}")
+        except Exception:
+            pass
+    print(f"✅ SQL examples trained. Success: {success_count}/{len(examples)}")
 
 
 # ---------------- MAIN -----------------
 async def main() -> None:
     ctx = MockContext()
-    print("🚀 Starting domain-aware Vanna training...")
-
     await train_ddl_and_docs(ctx)
     await train_sql_examples(ctx)
-
-    print("🎉 Training completed. You can now query the agent.")
-
+    print("🎉 Training completed.")
 
 if __name__ == "__main__":
     try:
         asyncio.run(main())
     except KeyboardInterrupt:
-        print("⏹ Training interrupted by user.")
+        pass

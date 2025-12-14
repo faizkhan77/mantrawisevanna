@@ -1,49 +1,68 @@
 import pandas as pd
+import urllib.parse
+from sqlalchemy import create_engine, text
 from vanna_core.config import Config
 from vanna.tools import RunSqlTool
-from vanna.integrations.mysql import MySQLRunner
+from vanna.integrations.mssql import MSSQLRunner
 
-# --- CUSTOM SAFE RUNNER ---
-class SafeMySQLRunner(MySQLRunner):
-    """
-    A custom MySQL runner that cleans binary data (bytes) from the results
-    to prevent Pydantic/JSON serialization errors.
-    """
-    # FIX: Defined as 'async def' because the parent class is async
-    async def run_sql(self, sql: str, *args, **kwargs) -> pd.DataFrame:
-        # FIX: We must 'await' the parent method to get the actual DataFrame
-        df = await super().run_sql(sql, *args, **kwargs)
-        
-        # 2. Check and clean binary columns
-        if df is not None and not df.empty:
-            for col in df.columns:
-                # Check if the column contains bytes/binary data
-                if df[col].dtype == 'object':
-                    # Get the first non-null value to check type
-                    first_valid_index = df[col].first_valid_index()
-                    if first_valid_index is not None:
-                        first_valid = df[col].loc[first_valid_index]
-                        if isinstance(first_valid, bytes):
-                            # Convert bytes to Hex String (e.g., b'\x00' -> "00")
-                            df[col] = df[col].apply(lambda x: x.hex() if isinstance(x, bytes) else x)
-                        
-        return df
+class SafeMSSQLRunner(MSSQLRunner):
+    def __init__(self, engine):
+        self.engine = engine
 
-# --- FACTORY ---
+    async def run_sql(self, sql, context=None, *args, **kwargs) -> pd.DataFrame:
+        # FIX: Vanna 2.0 might pass the whole arguments object instead of just the string.
+        # We check if 'sql' has a '.sql' attribute and extract it.
+        if hasattr(sql, 'sql'):
+            sql = sql.sql
+
+        try:
+            # Use SQLAlchemy engine to connect
+            with self.engine.connect() as conn:
+                # Use text() to safely handle the query string in SQLAlchemy
+                df = pd.read_sql(text(sql), conn)
+            
+            # Clean binary columns
+            if df is not None and not df.empty:
+                for col in df.columns:
+                    if df[col].dtype == 'object':
+                        first_valid_index = df[col].first_valid_index()
+                        if first_valid_index is not None:
+                            first_valid = df[col].loc[first_valid_index]
+                            if isinstance(first_valid, bytes):
+                                df[col] = df[col].apply(lambda x: x.hex() if isinstance(x, bytes) else x)
+            return df
+            
+        except Exception as e:
+            print(f"❌ SQL Execution Error: {e}")
+            # We return None or empty DF so Vanna handles the error gracefully
+            raise e
+
 class DBFactory:
     @staticmethod
     def get_db_tool():
-        if Config.DB_TYPE == "mysql":
-            # Initialize our CUSTOM SafeRunner
-            runner = SafeMySQLRunner(
-                host=Config.DB_HOST,
-                database=Config.DB_NAME,
-                user=Config.DB_USER,
-                password=Config.DB_PASSWORD,
-                port=Config.DB_PORT
-            )
-            # Wrap it in the Vanna Tool
+        if Config.DB_TYPE == "mssql":
+            driver = Config.DB_DRIVER.replace(' ', '+')
+            
+            # Connection String
+            if not Config.DB_USER:
+                url = (
+                    f"mssql+pyodbc://@"
+                    f"{Config.DB_HOST}/{Config.DB_NAME}"
+                    f"?driver={driver}"
+                    "&trusted_connection=yes"
+                    "&TrustServerCertificate=yes"
+                )
+            else:
+                encoded_pwd = urllib.parse.quote_plus(Config.DB_PASSWORD)
+                url = (
+                    f"mssql+pyodbc://{Config.DB_USER}:{encoded_pwd}"
+                    f"@{Config.DB_HOST}:{Config.DB_PORT}/{Config.DB_NAME}"
+                    f"?driver={driver}"
+                    "&TrustServerCertificate=yes"
+                )
+
+            engine = create_engine(url)
+            runner = SafeMSSQLRunner(engine=engine)
             return RunSqlTool(sql_runner=runner)
-        
         else:
             raise ValueError(f"Unsupported DB Type: {Config.DB_TYPE}")
