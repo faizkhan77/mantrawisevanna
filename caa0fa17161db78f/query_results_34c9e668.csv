@@ -1,0 +1,4 @@
+column_name,data_type
+stay_id,bigint
+arrival_date,timestamp with time zone
+total_revenue,numeric

@@ -1,0 +1,22 @@
+column_name,data_type
+rrid,bigint
+profileid,bigint
+restaurantsource,text
+restaurantsourcepropertycode,text
+versionstamp,bytea
+createdwhen,timestamp with time zone
+lastmodifiedwhen,timestamp with time zone
+restaurantreservationid,text
+restaurantconfid,text
+reservationstatus,text
+onsite,boolean
+partysize,integer
+startwhen,timestamp with time zone
+specialoccasion,text
+customerdietaryrestrictions,text
+guestdietaryrestrictions,text
+restaurantname,text
+restaurantdetails,text
+cancellationnumber,text
+totalspent,numeric
+iscancelled,boolean

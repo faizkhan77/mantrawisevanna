@@ -1,0 +1,5 @@
+table_name,column_name
+fct_booking_trends,arrival_date
+fct_golf_analytics,tee_time
+fct_recreation_analytics,start_time
+fct_spa_analytics,start_time

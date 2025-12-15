@@ -1,0 +1,9 @@
+table_name
+dim_guests
+fct_booking_trends
+fct_daily_business_performance
+fct_daily_operations_forecast
+fct_dining_analytics
+fct_golf_analytics
+fct_recreation_analytics
+fct_spa_analytics

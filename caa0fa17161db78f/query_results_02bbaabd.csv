@@ -1,0 +1,29 @@
+column_name,data_type
+pmssid,bigint
+profileid,bigint
+pmssource,text
+pmssourcepropertycode,text
+versionstamp,bytea
+createdwhen,timestamp with time zone
+lastmodifiedwhen,timestamp with time zone
+pmsstayid,text
+pmsconfid,text
+pmscrsid,text
+pmsfolioid,text
+firstname,text
+lastname,text
+arrivalwhen,timestamp with time zone
+departurewhen,timestamp with time zone
+staystatus,text
+roomnumber,text
+roomtype,text
+roomtypedescription,text
+roomdetail,text
+adults,integer
+arrivalratecode,text
+totalrevenue,numeric
+cancellationnumber,text
+childover,integer
+childunder,integer
+groupcode,text
+iscancelled,boolean

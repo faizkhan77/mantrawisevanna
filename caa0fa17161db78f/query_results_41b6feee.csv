@@ -1,0 +1,41 @@
+column_name,data_type
+sbid,bigint
+profileid,bigint
+spasource,text
+spasourcepropertycode,text
+versionstamp,bytea
+createdwhen,timestamp with time zone
+lastmodifiedwhen,timestamp with time zone
+spabookingid,text
+spaconfid,text
+startwhen,timestamp with time zone
+endwhen,timestamp with time zone
+bookingstatus,text
+activitytype,text
+activityname,text
+activitydescription,text
+providername,text
+providergender,text
+facilityname,text
+price,numeric
+cancellationnumber,text
+cancellationfee,numeric
+spaname,text
+spaaddress1,text
+spaaddress2,text
+spacity,text
+spastate,text
+spapostalcode,text
+healthnotes,text
+reservationnotes,text
+appointmentnotes,text
+guestnotes,text
+cancellationpolicy,text
+providergenderpreference,text
+facilitygenderpreference,text
+mainguesttype,text
+wellnessformcompleted,boolean
+wellnessformexpired,boolean
+wellnessformsent,boolean
+firsttimeguest,boolean
+iscancelled,boolean

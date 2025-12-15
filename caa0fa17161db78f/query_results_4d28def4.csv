@@ -1,0 +1,7 @@
+column_name,data_type
+business_date,date
+room_revenue,numeric
+food_beverage_revenue,numeric
+spa_revenue,numeric
+golf_revenue,numeric
+total_daily_revenue,numeric

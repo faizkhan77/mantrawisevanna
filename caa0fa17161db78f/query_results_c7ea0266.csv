@@ -1,0 +1,6 @@
+column_name,data_type
+restaurant_name,text
+total_reservations,integer
+avg_party_size,integer
+total_revenue,numeric
+cancellation_count,integer

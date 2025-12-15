@@ -1,0 +1,18 @@
+column_name,data_type
+pbarid,bigint
+profileid,bigint
+pbasource,text
+pbasourcepropertycode,text
+versionstamp,bytea
+createdwhen,timestamp with time zone
+lastmodifiedwhen,timestamp with time zone
+pbatype,text
+poolbeachname,text
+pbanumber,text
+maxguests,smallint
+startwhen,timestamp with time zone
+completeswhen,timestamp with time zone
+cancellationnumber,text
+confid,text
+location,text
+pricequoted,numeric

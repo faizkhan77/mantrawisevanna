@@ -1,0 +1,5 @@
+table_name,column_name
+dim_guests,lifetime_spend
+fct_golf_analytics,tee_time
+fct_recreation_analytics,start_time
+fct_spa_analytics,start_time

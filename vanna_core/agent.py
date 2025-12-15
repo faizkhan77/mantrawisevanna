@@ -70,17 +70,29 @@ class DynamicSystemPromptBuilder(DefaultSystemPromptBuilder):
 
         # INJECT USER PREFERENCES (Language, Currency, etc)
         preference_instructions = ""
+        
+        print(f"\n🔍 [PROMPT BUILDER] Building prompt for user: {user.id}")
+        
         if user:
-            # We use the user's ID (email) to fetch prefs
             prefs = preference_store.get_prefs(user.id)
+            print(f"🔍 [PROMPT BUILDER] Found Preferences: {prefs}")
+            
             if prefs:
-                preference_instructions = "\n# 👤 USER PREFERENCES (STRICTLY FOLLOW)\n"
-                for key, value in prefs.items():
-                    preference_instructions += f"- {key}: {value}\n"
+                preference_instructions = "\n# 👤 CRITICAL USER PREFERENCES\n"
+                preference_instructions += "You MUST strictly adhere to the following constraints for the final response:\n"
                 
-                preference_instructions += "\nIMPORTANT: You must adapt your final response (language, currency, tone) to match these preferences exactly.\n"
+                for key, value in prefs.items():
+                    preference_instructions += f"- **{key.upper()}**: {value}\n"
+                    # Add specific instructions for common keys to ensure LLM understands
+                    if key.lower() == 'language':
+                        preference_instructions += f"  (You MUST answer in {value}, translating any analysis or explanations. The SQL remains in English/Code.)\n"
+                    if key.lower() == 'currency':
+                        preference_instructions += f"  (All monetary values must be formatted in {value}.)\n"
 
-        return base_prompt + db_specific_instructions + formatting_instructions + preference_instructions
+        # Combine
+        final_prompt = base_prompt + db_specific_instructions + formatting_instructions + preference_instructions
+
+        return final_prompt
 
 def create_vanna_agent() -> Agent:
     tools = ToolRegistry()
