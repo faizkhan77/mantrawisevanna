@@ -1,0 +1,46 @@
+[
+  {
+    "input": "List all active guest profiles with their primary email and phone.",
+    "query": "SELECT pid, firstname, lastname, primaryemail, primaryphone FROM dbo.profiles WHERE isactive = 1;"
+  },
+  {
+    "input": "Show the latest 50 hotel stay records including guest name, arrival, departure, and room number.",
+    "query": "SELECT s.pmssid, p.firstname, p.lastname, s.arrivalwhen, s.departurewhen, s.roomnumber FROM dbo.pmsstays s JOIN dbo.profiles p ON p.pid = s.profileid ORDER BY s.arrivalwhen DESC LIMIT 50;"
+  },
+  {
+    "input": "Find all restaurant reservations for a given profile ID.",
+    "query": "SELECT * FROM dbo.restaurantreservations WHERE profileid = {{profile_id}} ORDER BY startwhen DESC;"
+  },
+  {
+    "input": "Get total spa spending per guest profile.",
+    "query": "SELECT profileid, SUM(CAST(price AS NUMERIC(10,2))) AS totalspaspent FROM dbo.spabookings GROUP BY profileid;"
+  },
+  {
+    "input": "Which guests have booked a tennis or padel court in the last 30 days?",
+    "query": "SELECT c.cbid, c.profileid, p.firstname, p.lastname, c.courttypedescription, c.startwhen FROM dbo.courtbookings c JOIN dbo.profiles p ON p.pid = c.profileid WHERE c.startwhen >= (NOW() - INTERVAL '30 days');"
+  },
+  {
+    "input": "Show the top 20 guests by total restaurant spending.",
+    "query": "SELECT profileid, SUM(CAST(totalspent AS NUMERIC(10,2))) AS restauranttotal FROM dbo.restaurantreservations GROUP BY profileid ORDER BY restauranttotal DESC LIMIT 20;"
+  },
+  {
+    "input": "List profiles with VIP status and their last visit date.",
+    "query": "SELECT p.pid, p.firstname, p.lastname, p.vipstatus, (SELECT MAX(s.arrivalwhen) FROM dbo.pmsstays s WHERE s.profileid = p.pid) AS lastvisit FROM dbo.profiles p WHERE p.isvip = 1;"
+  },
+  {
+    "input": "Summarize this week’s occupancy and revenue.",
+    "query": "SELECT COUNT(*) AS totalstays, SUM(CAST(totalrevenue AS NUMERIC(10,2))) AS totalrevenue FROM dbo.pmsstays WHERE arrivalwhen >= DATE_TRUNC('week', NOW()) AND arrivalwhen < DATE_TRUNC('week', NOW()) + INTERVAL '1 week' AND staystatus NOT LIKE '%Cancelled%' AND iscancelled = 0;"
+  },
+  {
+    "input": "What is today’s occupancy?",
+    "query": "SELECT COUNT(*) AS occupiedrooms FROM dbo.pmsstays WHERE CURRENT_DATE BETWEEN CAST(arrivalwhen AS DATE) AND CAST(departurewhen AS DATE) AND staystatus NOT LIKE '%cancel%' AND iscancelled = 0;"
+  },
+  {
+    "input": "Which spa treatments are most popular by guest demographic?",
+    "query": "SELECT p.gender, p.primarycountry AS country, s.activityname AS treatment, COUNT(*) AS totalbookings FROM dbo.spabookings s JOIN dbo.profiles p ON p.pid = s.profileid WHERE s.iscancelled = 0 GROUP BY p.gender, p.primarycountry, s.activityname ORDER BY totalbookings DESC;"
+  },
+  {
+    "input": "Show me the top customer segments by lifetime value from analytics.",
+    "query": "SELECT country, COUNT(*) AS guests, SUM(lifetime_spend) AS lifetime_value FROM analytics_analytics.dim_guests GROUP BY country ORDER BY lifetime_value DESC LIMIT 10;"
+  }
+]

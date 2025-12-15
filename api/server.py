@@ -28,9 +28,10 @@ class CustomVannaServer:
         uvicorn.run(self.app, host=host, port=port)
 
 # Helper function to handle async DB call
-async def _fetch_schema_async(tool_instance, sql):
+async def _fetch_schema_async(tool_instance, args):
     # Execute query using the raw tool's runner
-    df = await tool_instance.sql_runner.run_sql(sql, context=None)
+    # Note: args is now an object with a .sql attribute
+    df = await tool_instance.sql_runner.run_sql(args, context=None)
     
     if df is None or df.empty:
         print("⚠️ Schema Query returned NO results.")
@@ -41,8 +42,13 @@ async def _fetch_schema_async(tool_instance, sql):
     tables_dict = {}
     
     for _, row in df.iterrows():
-        schema = row['TABLE_SCHEMA']
-        table = row['TABLE_NAME']
+        # Using .get() allows us to handle slight variations in driver casing if aliases fail
+        schema = row.get('TABLE_SCHEMA') or row.get('table_schema')
+        table = row.get('TABLE_NAME') or row.get('table_name')
+        
+        if not schema or not table:
+            continue
+
         key = f"{schema}.{table}"
         
         if key not in tables_dict:
@@ -52,9 +58,12 @@ async def _fetch_schema_async(tool_instance, sql):
                 "columns": []
             }
         
+        col_name = row.get('COLUMN_NAME') or row.get('column_name')
+        data_type = row.get('DATA_TYPE') or row.get('data_type')
+
         tables_dict[key]["columns"].append({
-            "name": row['COLUMN_NAME'],
-            "type": row['DATA_TYPE']
+            "name": col_name,
+            "type": data_type
         })
         
     return {"tables": list(tables_dict.values())}
@@ -104,17 +113,46 @@ def create_server() -> CustomVannaServer:
     # --- CUSTOM ENDPOINT ---
     @app.get("/api/schema")
     async def get_database_schema():
-        sql = """
-            SELECT TABLE_SCHEMA, TABLE_NAME, COLUMN_NAME, DATA_TYPE 
-            FROM INFORMATION_SCHEMA.COLUMNS 
-            WHERE TABLE_SCHEMA IN ('dbo', 'analytics_analytics')
-            ORDER BY TABLE_SCHEMA DESC, TABLE_NAME, ORDINAL_POSITION
-        """
+        # DYNAMIC SQL GENERATION BASED ON CONFIG.DB_TYPE
+        sql = ""
+        
+        if Config.DB_TYPE == "postgres":
+            # Postgres returns lowercase by default, so we alias to uppercase 
+            # to match what the python code expects (though the python code is now robust)
+            sql = f"""
+                SELECT table_schema as "TABLE_SCHEMA", 
+                       table_name as "TABLE_NAME", 
+                       column_name as "COLUMN_NAME", 
+                       data_type as "DATA_TYPE"
+                FROM information_schema.columns 
+                WHERE table_schema IN ('dbo', 'analytics_analytics')
+                ORDER BY table_schema DESC, table_name, ordinal_position
+            """
+        elif Config.DB_TYPE == "mysql":
+            sql = f"""
+                SELECT TABLE_SCHEMA, TABLE_NAME, COLUMN_NAME, DATA_TYPE 
+                FROM INFORMATION_SCHEMA.COLUMNS 
+                WHERE TABLE_SCHEMA = '{Config.DB_NAME}'
+                ORDER BY TABLE_NAME, ORDINAL_POSITION
+            """
+        else: # MSSQL (Default)
+            sql = f"""
+                SELECT TABLE_SCHEMA, TABLE_NAME, COLUMN_NAME, DATA_TYPE 
+                FROM INFORMATION_SCHEMA.COLUMNS 
+                WHERE TABLE_CATALOG = '{Config.DB_NAME}' 
+                  AND TABLE_SCHEMA IN ('dbo', 'analytics_analytics')
+                ORDER BY TABLE_SCHEMA DESC, TABLE_NAME, ORDINAL_POSITION
+            """
         
         try:
-            # FIX: Use the imported 'db_tool' global variable directly.
-            # This is the raw RunSqlTool instance, not the wrapper.
-            return await _fetch_schema_async(db_tool, sql)
+            # Helper class to wrap the string, satisfying native PostgresRunner
+            class SimpleArgs:
+                def __init__(self, s): self.sql = s
+            
+            args = SimpleArgs(sql)
+            
+            # Use the imported 'db_tool' global variable directly.
+            return await _fetch_schema_async(db_tool, args)
             
         except Exception as e:
             print(f"❌ Schema Fetch Error: {e}")
@@ -157,4 +195,3 @@ def create_server() -> CustomVannaServer:
             return {"response": f"Error: {str(e)}"}
             
     return CustomVannaServer(app)
-

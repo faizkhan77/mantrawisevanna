@@ -1,0 +1,178 @@
+[
+  {
+    "input": "List all active guest profiles with their primary email and phone.",
+    "query": "SELECT PId, FirstName, LastName, PrimaryEmail, PrimaryPhone FROM profiles WHERE IsActive = TRUE;"
+  },
+  {
+    "input": "Show the latest 50 hotel stay records including guest name, arrival, departure, and room number.",
+    "query": "SELECT s.PMSSId, p.FirstName, p.LastName, s.ArrivalWhen, s.DepartureWhen, s.RoomNumber FROM pmsstays s JOIN profiles p ON p.PId = s.ProfileId ORDER BY s.ArrivalWhen DESC LIMIT 50;"
+  },
+  {
+    "input": "Find all restaurant reservations for a given profile ID.",
+    "query": "SELECT * FROM restaurantreservations WHERE ProfileId = {{profile_id}} ORDER BY StartWhen DESC;"
+  },
+  {
+    "input": "Get total spa spending per guest profile.",
+    "query": "SELECT ProfileId, SUM(CAST(Price AS DECIMAL(10,2))) AS TotalSpaSpent FROM spabookings GROUP BY ProfileId;"
+  },
+  {
+    "input": "Which guests have booked a tennis or padel court in the last 30 days?",
+    "query": "SELECT c.CBId, c.ProfileId, p.FirstName, p.LastName, c.CourtTypeDescription, c.StartWhen FROM courtbookings c JOIN profiles p ON p.PId = c.ProfileId WHERE c.StartWhen >= NOW() - INTERVAL 30 DAY;"
+  },
+  {
+    "input": "Show the top 20 guests by total restaurant spending.",
+    "query": "SELECT ProfileId, SUM(CAST(TotalSpent AS DECIMAL(10,2))) AS RestaurantTotal FROM restaurantreservations GROUP BY ProfileId ORDER BY RestaurantTotal DESC LIMIT 20;"
+  },
+  {
+    "input": "Find all spa bookings that were cancelled and show cancellation fees.",
+    "query": "SELECT SBId, ProfileId, StartWhen, CancellationNumber, CAST(CancellationFee AS DECIMAL(10,2)) AS CancelFee FROM spabookings WHERE IsCancelled = TRUE;"
+  },
+  {
+    "input": "Show all tee-time bookings with number of players and course name for the last 7 days.",
+    "query": "SELECT TTBId, ProfileId, CourseName, NumberOfPlayers, BookedDate FROM teetimebookings WHERE BookedDate >= NOW() - INTERVAL 7 DAY;"
+  },
+  {
+    "input": "Get monthly revenue by revenue type for a given year.",
+    "query": "SELECT Month, SUM(CAST(Revenue AS DECIMAL(10,2))) AS TotalRevenue, RevenueType FROM profilemonthlyspend WHERE Year = {{year}} GROUP BY Month, RevenueType ORDER BY Month;"
+  },
+  {
+    "input": "Which guests have checked in to any activity (spa, court, lesson) today?",
+    "query": "SELECT ProfileId, 'spa' AS Source FROM spabookings WHERE DATE(StartWhen) = CURDATE() AND IsCheckedIn = TRUE UNION ALL SELECT ProfileId, 'court' AS Source FROM courtbookings WHERE DATE(StartWhen) = CURDATE() AND IsCheckedIn = TRUE UNION ALL SELECT ProfileId, 'lesson' AS Source FROM lessonbookings WHERE DATE(StartWhen) = CURDATE() AND IsCheckedIn = TRUE;"
+  },
+  {
+    "input": "Show all pool and beach amenity reservations for cabanas.",
+    "query": "SELECT PBARId, ProfileId, PoolBeachName, StartWhen, CompletesWhen, PriceQuoted FROM poolbeachamenityreservations WHERE PBAType = 'CABANA';"
+  },
+  {
+  "input": "List profiles with VIP status and their last visit date.",
+  "query": "SELECT p.PId, p.FirstName, p.LastName, p.VIPStatus, (SELECT MAX(s.ArrivalWhen) FROM pmsstays s WHERE s.ProfileId = p.PId) AS LastVisit FROM profiles p WHERE p.IsVIP = TRUE;"
+}
+,
+  {
+    "input": "Get total combined spending (spa + restaurant) for each profile.",
+    "query": "SELECT p.PId, p.FirstName, p.LastName, COALESCE(spa.SpaSpend,0) + COALESCE(rest.RestSpend,0) AS TotalSpend FROM profiles p LEFT JOIN (SELECT ProfileId, SUM(CAST(Price AS DECIMAL(10,2))) AS SpaSpend FROM spabookings GROUP BY ProfileId) spa ON spa.ProfileId = p.PId LEFT JOIN (SELECT ProfileId, SUM(CAST(TotalSpent AS DECIMAL(10,2))) AS RestSpend FROM restaurantreservations GROUP BY ProfileId) rest ON rest.ProfileId = p.PId;"
+  },
+  {
+    "input": "Which guests have transportation reservations today?",
+    "query": "SELECT ProfileId, Driver, Destination, NumberOfGuests, StartWhen FROM transportationreservations WHERE DATE(StartWhen) = CURDATE();"
+  },
+  {
+    "input": "Get activity count per guest across all activity tables.",
+    "query": "SELECT ProfileId, COUNT(*) AS ActivityCount FROM (SELECT ProfileId FROM courtbookings UNION ALL SELECT ProfileId FROM lessonbookings UNION ALL SELECT ProfileId FROM teetimebookings UNION ALL SELECT ProfileId FROM spabookings UNION ALL SELECT ProfileId FROM otherreservations) x GROUP BY ProfileId ORDER BY ActivityCount DESC;"
+  },
+  {
+    "input": "Find guests who stayed in a room of type 'Suite' in the last 6 months.",
+    "query": "SELECT s.PMSSId, s.ProfileId, p.FirstName, p.LastName, s.RoomType, s.ArrivalWhen FROM pmsstays s JOIN profiles p ON p.PId = s.ProfileId WHERE s.RoomType LIKE '%Suite%' AND s.ArrivalWhen >= NOW() - INTERVAL 6 MONTH;"
+  },
+  {
+    "input": "Show the most frequently reserved restaurants.",
+    "query": "SELECT RestaurantName, COUNT(*) AS TotalReservations FROM restaurantreservations GROUP BY RestaurantName ORDER BY TotalReservations DESC;"
+  },
+  {
+    "input": "Get the number of visits per profile per year from visit history.",
+    "query": "SELECT ProfileId, CAST(VisitCount AS UNSIGNED) AS TotalVisits FROM profilevisitsperyear;"
+  },
+  {
+    "input": "List all lesson bookings with instructor name, lesson type, and guest name.",
+    "query": "SELECT l.LBId, l.InstructorName, l.LessonType, p.FirstName, p.LastName, l.StartWhen FROM lessonbookings l JOIN profiles p ON p.PId = l.ProfileId;"
+  },
+  {
+    "input": "Find guests who spent more than 5000 total in all categories combined.",
+    "query": "SELECT p.PId, p.FirstName, p.LastName, CAST(p.TotalSpent AS DECIMAL(10,2)) AS TotalSpent FROM profiles p WHERE CAST(p.TotalSpent AS DECIMAL(10,2)) > 5000;"
+  },
+
+
+  {
+  "input": "Summarize this week’s occupancy and revenue.",
+  "query": "SELECT COUNT(*) AS TotalStays, SUM(CAST(TotalRevenue AS DECIMAL(10,2))) AS TotalRevenue FROM pmsstays WHERE ArrivalWhen >= DATE_SUB(CURDATE(), INTERVAL WEEKDAY(CURDATE()) DAY) AND ArrivalWhen < DATE_ADD(DATE_SUB(CURDATE(), INTERVAL WEEKDAY(CURDATE()) DAY), INTERVAL 7 DAY) AND StayStatus NOT LIKE '%Cancelled%' AND IsCancelled = FALSE;"
+}
+,
+{
+  "input": "Calculate occupied room nights and revenue for the current week.",
+  "query": "SELECT SUM(DATEDIFF(LEAST(DepartureWhen, CURDATE()), GREATEST(ArrivalWhen, DATE_SUB(CURDATE(), INTERVAL WEEKDAY(CURDATE()) DAY)))) AS OccupiedNights, SUM(CAST(TotalRevenue AS DECIMAL(10,2))) AS TotalRevenue FROM pmsstays WHERE ArrivalWhen < DATE_ADD(DATE_SUB(CURDATE(), INTERVAL WEEKDAY(CURDATE()) DAY), INTERVAL 7 DAY) AND DepartureWhen > DATE_SUB(CURDATE(), INTERVAL WEEKDAY(CURDATE()) DAY) AND StayStatus NOT LIKE '%cancel%' AND IsCancelled = FALSE;"
+}
+,
+{
+  "input": "What is today’s occupancy?",
+  "query": "SELECT COUNT(*) AS OccupiedRooms FROM pmsstays WHERE CURDATE() BETWEEN DATE(ArrivalWhen) AND DATE(DepartureWhen) AND StayStatus NOT LIKE '%cancel%' AND IsCancelled = FALSE;"
+}
+,
+{
+  "input": "Show total hotel revenue for this week.",
+  "query": "SELECT SUM(CAST(TotalRevenue AS DECIMAL(10,2))) AS TotalRevenue FROM pmsstays WHERE ArrivalWhen >= DATE_SUB(CURDATE(), INTERVAL WEEKDAY(CURDATE()) DAY) AND ArrivalWhen < DATE_ADD(DATE_SUB(CURDATE(), INTERVAL WEEKDAY(CURDATE()) DAY), INTERVAL 7 DAY);"
+}
+,
+
+{
+  "input": "Which departments are over or under performing this month?",
+  "query": "SELECT 'Spa' AS Department, SUM(CAST(Price AS DECIMAL(10,2))) AS Revenue FROM spabookings WHERE MONTH(StartWhen)=MONTH(CURDATE()) UNION ALL SELECT 'Restaurant', SUM(CAST(TotalSpent AS DECIMAL(10,2))) FROM restaurantreservations WHERE MONTH(StartWhen)=MONTH(CURDATE()) UNION ALL SELECT 'CourtBookings', SUM(CAST(BookingSalesValue AS DECIMAL(10,2))) FROM courtbookings WHERE MONTH(StartWhen)=MONTH(CURDATE()) UNION ALL SELECT 'Lessons', SUM(CAST(LessonSalesValue AS DECIMAL(10,2))) FROM lessonbookings WHERE MONTH(StartWhen)=MONTH(CURDATE()) UNION ALL SELECT 'TeeTime', SUM(CAST(BookingSalesValue AS DECIMAL(10,2))) FROM teetimebookings WHERE MONTH(BookedDate)=MONTH(CURDATE());"
+},
+
+{
+  "input": "Show me the top customer segments by lifetime value.",
+  "query": "SELECT PrimaryCountry AS Segment, COUNT(*) AS Guests, SUM(CAST(TotalSpent AS DECIMAL(10,2))) AS LifetimeValue FROM profiles WHERE TotalSpent IS NOT NULL GROUP BY PrimaryCountry ORDER BY LifetimeValue DESC LIMIT 10;"
+}
+,
+
+{
+  "input": "What states are most frequent international guests coming from?",
+  "query": "SELECT PrimaryState AS State, COUNT(*) AS GuestCount FROM profiles WHERE PrimaryCountry <> 'UAE' AND PrimaryState IS NOT NULL GROUP BY PrimaryState ORDER BY GuestCount DESC;"
+}
+,
+
+{
+  "input": "What regions or countries are our most frequent international guests coming from?",
+  "query": "SELECT PrimaryCountry AS Country, COUNT(*) AS GuestCount FROM profiles WHERE PrimaryCountry <> 'UAE' AND PrimaryCountry IS NOT NULL GROUP BY PrimaryCountry ORDER BY GuestCount DESC;"
+},
+
+{
+  "input": "Identify dates where we could have increased prices based on demand.",
+  "query": "WITH occ AS ( SELECT DATE(ArrivalWhen) AS StayDate, COUNT(*) AS RoomsOccupied FROM pmsstays WHERE StayStatus NOT LIKE '%cancel%' AND IsCancelled = FALSE GROUP BY DATE(ArrivalWhen) ) SELECT StayDate, RoomsOccupied FROM occ WHERE RoomsOccupied = (SELECT MAX(RoomsOccupied) FROM occ) OR RoomsOccupied > (SELECT AVG(RoomsOccupied) FROM occ) * 1.20 ORDER BY RoomsOccupied DESC;"
+}
+,
+{
+  "input": "Show me trends in booking windows over the past year.",
+  "query": "SELECT DATE_FORMAT(ArrivalWhen, '%Y-%m') AS Month, AVG(DATEDIFF(ArrivalWhen, CreatedWhen)) AS AvgBookingWindow FROM pmsstays WHERE ArrivalWhen >= DATE_SUB(CURDATE(), INTERVAL 12 MONTH) AND StayStatus NOT LIKE '%cancel%' GROUP BY DATE_FORMAT(ArrivalWhen, '%Y-%m') ORDER BY Month;"
+},
+
+{
+  "input": "Which days typically experience the most check-in?",
+  "query": "SELECT DAYNAME(ArrivalWhen) AS DayOfWeek, COUNT(*) AS CheckIns FROM pmsstays WHERE StayStatus NOT LIKE '%cancel%' GROUP BY DayOfWeek ORDER BY CheckIns DESC;"
+}
+,
+{
+  "input": "Forecast the check-in for the next 90 days.",
+  "query": "SELECT DATE(ArrivalWhen) AS ArrivalDate, COUNT(*) AS ExpectedCheckIns FROM pmsstays WHERE ArrivalWhen BETWEEN CURDATE() AND DATE_ADD(CURDATE(), INTERVAL 90 DAY) AND StayStatus NOT LIKE '%Cancelled%' GROUP BY DATE(ArrivalWhen) ORDER BY ArrivalDate;"
+},
+
+{
+  "input": "Are there any anomalies in the number of future bookings?",
+  "query": "WITH future_bookings AS ( SELECT DATE(ArrivalWhen) AS StayDate, COUNT(*) AS CountBookings FROM pmsstays WHERE ArrivalWhen > CURDATE() GROUP BY DATE(ArrivalWhen) ), baseline AS ( SELECT AVG(day_count) AS AvgDaily FROM ( SELECT DATE(ArrivalWhen) AS Day, COUNT(*) AS day_count FROM pmsstays WHERE ArrivalWhen BETWEEN DATE_SUB(CURDATE(), INTERVAL 180 DAY) AND CURDATE() GROUP BY DATE(ArrivalWhen) ) x ) SELECT f.StayDate, f.CountBookings FROM future_bookings f CROSS JOIN baseline b WHERE f.CountBookings > b.AvgDaily * 1.5 OR f.CountBookings < b.AvgDaily * 0.5 ORDER BY f.StayDate;"
+}
+
+,
+{
+  "input": "List VIP guests who haven't returned in the last 12 months.",
+  "query": "SELECT p.PId, p.FirstName, p.LastName, p.VIPStatus, (SELECT MAX(s.ArrivalWhen) FROM pmsstays s WHERE s.ProfileId = p.PId) AS LastArrival FROM profiles p WHERE p.IsVIP = TRUE HAVING LastArrival < DATE_SUB(CURDATE(), INTERVAL 12 MONTH) OR LastArrival IS NULL;"
+}
+
+,
+{
+  "input": "From which country and state our VIP customers are coming from?",
+  "query": "SELECT PrimaryCountry AS Country, PrimaryState AS State, COUNT(*) AS VIPCount FROM profiles WHERE IsVIP = TRUE GROUP BY PrimaryCountry, PrimaryState ORDER BY VIPCount DESC;"
+},
+
+{
+  "input": "List all top spenders that are VIP.",
+  "query": "SELECT PId, FirstName, LastName, VIPStatus, CAST(TotalSpent AS DECIMAL(10,2)) AS LifetimeSpend FROM profiles WHERE IsVIP = TRUE ORDER BY LifetimeSpend DESC;"
+}
+,
+{
+  "input": "List all top spenders who haven't returned in the last 12 months.",
+  "query": "SELECT p.PId, p.FirstName, p.LastName, CAST(p.TotalSpent AS DECIMAL(10,2)) AS LifetimeSpend, (SELECT MAX(s.ArrivalWhen) FROM pmsstays s WHERE s.ProfileId = p.PId) AS LastArrival FROM profiles p HAVING (LastArrival < DATE_SUB(CURDATE(), INTERVAL 12 MONTH) OR LastArrival IS NULL) ORDER BY LifetimeSpend DESC;"
+}
+
+
+
+
+]

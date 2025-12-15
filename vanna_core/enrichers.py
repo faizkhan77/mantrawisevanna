@@ -7,6 +7,11 @@ from vanna.core.tool import ToolContext
 from vanna_core.config import Config
 from vanna_core.store import preference_store
 
+# Helper to satisfy Vanna's Runner interface which expects an object with .sql
+class SimpleSqlArgs:
+    def __init__(self, sql: str):
+        self.sql = sql
+
 class DatabaseSchemaEnricher(ToolContextEnricher):
     """
     Automatically fetches the database schema (Tables & Columns) 
@@ -21,22 +26,40 @@ class DatabaseSchemaEnricher(ToolContextEnricher):
         # If we haven't loaded schema yet, fetch it
         if not self.is_loaded:
             try:
-                # MS SQL Query to get schema info for BOTH raw and analytics schemas
-                # We specifically look at 'dbo' (Raw) and 'analytics_analytics' (DBT Marts)
-                sql = """
-                    SELECT TABLE_SCHEMA, TABLE_NAME, COLUMN_NAME, DATA_TYPE 
-                    FROM INFORMATION_SCHEMA.COLUMNS 
-                    WHERE TABLE_CATALOG = '{}' 
-                      AND TABLE_SCHEMA IN ('dbo', 'analytics_analytics')
-                    ORDER BY TABLE_SCHEMA, TABLE_NAME, ORDINAL_POSITION
-                """.format(Config.DB_NAME)
+                # 1. DYNAMIC QUERY GENERATION
+                sql = ""
+                if Config.DB_TYPE == "postgres":
+                    sql = f"""
+                        SELECT table_schema, table_name, column_name, data_type 
+                        FROM information_schema.columns 
+                        WHERE table_schema IN ('dbo', 'analytics_analytics')
+                        ORDER BY table_schema, table_name, ordinal_position
+                    """
+                elif Config.DB_TYPE == "mysql":
+                    sql = f"""
+                        SELECT TABLE_SCHEMA, TABLE_NAME, COLUMN_NAME, DATA_TYPE 
+                        FROM INFORMATION_SCHEMA.COLUMNS 
+                        WHERE TABLE_SCHEMA = '{Config.DB_NAME}'
+                        ORDER BY TABLE_NAME, ORDINAL_POSITION
+                    """
+                elif Config.DB_TYPE == "mssql":
+                    sql = f"""
+                        SELECT TABLE_SCHEMA, TABLE_NAME, COLUMN_NAME, DATA_TYPE 
+                        FROM INFORMATION_SCHEMA.COLUMNS 
+                        WHERE TABLE_CATALOG = '{Config.DB_NAME}' 
+                          AND TABLE_SCHEMA IN ('dbo', 'analytics_analytics')
+                        ORDER BY TABLE_SCHEMA, TABLE_NAME, ORDINAL_POSITION
+                    """
                 
-                # Execute with context
-                df = await self.db_tool.sql_runner.run_sql(sql, context=context)
+                # 2. Wrap SQL to satisfy native Runners (like PostgresRunner)
+                args = SimpleSqlArgs(sql)
+
+                # 3. Execute with context
+                # We access the runner directly, so we pass the wrapped args
+                df = await self.db_tool.sql_runner.run_sql(args, context=context)
                 
                 if df is not None and not df.empty:
                     # Convert DataFrame to a structured CSV string for the LLM
-                    # Including TABLE_SCHEMA is crucial now so LLM knows which is which
                     schema_text = df.to_csv(index=False)
                     self.schema_cache['schema_text'] = schema_text
                     self.is_loaded = True
@@ -77,10 +100,9 @@ class UserPreferencesEnricher(ToolContextEnricher):
     """
     async def enrich_context(self, context: ToolContext) -> ToolContext:
         # Fetch from our memory store
-        user_id = context.user.id
-        prefs = preference_store.get_prefs(user_id)
-        
-        # Add to metadata so tools can see it
-        context.metadata['user_preferences'] = prefs
+        if context.user:
+            user_id = context.user.id
+            prefs = preference_store.get_prefs(user_id)
+            # Add to metadata so tools can see it
+            context.metadata['user_preferences'] = prefs
         return context
-
