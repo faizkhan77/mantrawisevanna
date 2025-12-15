@@ -56,8 +56,18 @@ class DynamicSystemPromptBuilder(DefaultSystemPromptBuilder):
             # 2. LIMITING: Use `LIMIT n`.
             # 3. QUOTING: Use backticks: `table`.
             """
+        
+        formatting_instructions = """
+        
+        # 🎨 FORMATTING RULES (IMPORTANT)
+        # 1. You MUST use Markdown for all non-SQL responses.
+        # 2. Use **Bold** for important entities (table names, metrics).
+        # 3. Use Lists (- item) for steps or multiple points.
+        # 4. If explaining a query, use `code blocks` for column names.
+        # 5. Keep responses concise and professional.
+        """
 
-        return base_prompt + db_specific_instructions
+        return base_prompt + db_specific_instructions + formatting_instructions
 
 def create_vanna_agent() -> Agent:
     tools = ToolRegistry()
