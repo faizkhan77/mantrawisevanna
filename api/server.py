@@ -37,46 +37,61 @@ class CustomVannaServer:
         print(f"🚀 Custom Vanna Server running on http://{host}:{port}")
         uvicorn.run(self.app, host=host, port=port)
 
-# Helper function to handle async DB call
-async def _fetch_schema_async(tool_instance, args):
-    # Execute query using the raw tool's runner
-    # Note: args is now an object with a .sql attribute
+# Helper for Basic Schema (Tables/Columns)
+async def _fetch_tables_async(tool_instance, args):
     df = await tool_instance.sql_runner.run_sql(args, context=None)
-    
     if df is None or df.empty:
-        print("⚠️ Schema Query returned NO results.")
-        return {"tables": []}
-
-    print(f"✅ Schema Query returned {len(df)} rows.")
-
-    tables_dict = {}
+        return {} # Return dict for easier merging
     
+    tables_dict = {}
     for _, row in df.iterrows():
-        # Using .get() allows us to handle slight variations in driver casing if aliases fail
         schema = row.get('TABLE_SCHEMA') or row.get('table_schema')
         table = row.get('TABLE_NAME') or row.get('table_name')
+        if not schema or not table: continue
         
-        if not schema or not table:
-            continue
-
         key = f"{schema}.{table}"
-        
         if key not in tables_dict:
             tables_dict[key] = {
-                "schema": schema,
-                "table": table,
-                "columns": []
+                "schema": schema, 
+                "table": table, 
+                "columns": [], 
+                "relationships": [] # Initialize relationships list
             }
         
         col_name = row.get('COLUMN_NAME') or row.get('column_name')
         data_type = row.get('DATA_TYPE') or row.get('data_type')
-
-        tables_dict[key]["columns"].append({
-            "name": col_name,
-            "type": data_type
-        })
+        tables_dict[key]["columns"].append({"name": col_name, "type": data_type})
         
-    return {"tables": list(tables_dict.values())}
+    return tables_dict
+
+# Helper for Foreign Keys (Relationships)
+async def _fetch_relationships_async(tool_instance, args, tables_dict):
+    df = await tool_instance.sql_runner.run_sql(args, context=None)
+    if df is None or df.empty:
+        return tables_dict
+
+    for _, row in df.iterrows():
+        # Adjust casing based on DB driver return
+        origin_schema = row.get('schema_name') or row.get('SCHEMA_NAME')
+        origin_table = row.get('table_name') or row.get('TABLE_NAME')
+        origin_col = row.get('column_name') or row.get('COLUMN_NAME')
+        
+        target_schema = row.get('foreign_schema') or row.get('FOREIGN_SCHEMA')
+        target_table = row.get('foreign_table') or row.get('FOREIGN_TABLE')
+        target_col = row.get('foreign_column') or row.get('FOREIGN_COLUMN')
+
+        origin_key = f"{origin_schema}.{origin_table}"
+
+        # Add relationship to the origin table
+        if origin_key in tables_dict:
+            tables_dict[origin_key]["relationships"].append({
+                "column": origin_col,
+                "target_schema": target_schema,
+                "target_table": target_table,
+                "target_column": target_col
+            })
+            
+    return tables_dict
 
 def create_server() -> CustomVannaServer:
     app = FastAPI(title="Mantra Wise Agent API", version="2.0")
@@ -89,117 +104,129 @@ def create_server() -> CustomVannaServer:
         allow_headers=["*"],
     )
 
-    # Register Vanna Chat Routes
     chat_handler = ChatHandler(vanna_agent)
     register_chat_routes(app, chat_handler)
 
-    # --- AUTH TYPES ---
     class LoginRequest(BaseModel):
         email: str
         password: str
 
-    # --- 1. LOGIN ENDPOINT (Generates JWT) ---
+    # --- 1. LOGIN ---
     @app.post("/api/login")
     def login(data: LoginRequest, response: Response):
         if data.email == ADMIN_EMAIL and data.password == ADMIN_PASSWORD:
-            
-            # Create JWT Payload
-            expiration = datetime.datetime.utcnow() + datetime.timedelta(days=7) # 7 Day Session
+            expiration = datetime.datetime.utcnow() + datetime.timedelta(days=7)
             payload = {
                 "sub": data.email,
-                "groups": ["admin", "viewer"],
+                "groups": ["admin"],
                 "permissions": ["read", "write", "execute_sql"],
                 "exp": expiration
             }
-            
             token = jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGORITHM)
-
-            # Set HttpOnly Cookie
-            response.set_cookie(
-                key="vanna_auth",
-                value=token,
-                httponly=False, # Set to True in Prod, False allows JS debug
-                max_age=604800, # 7 days
-                samesite="lax",
-                secure=False # Set to True if using HTTPS
-            )
+            
+            response.set_cookie(key="vanna_auth", value=token, httponly=False, max_age=604800, samesite="lax", secure=False)
             return {"status": "success", "user": {"email": data.email, "role": "admin"}}
         else:
             return Response(content='{"status": "error", "message": "Invalid credentials"}', status_code=401, media_type="application/json")
 
-    # --- 2. SESSION CHECK ENDPOINT (For Page Refresh) ---
-    @app.get("/api/me")
-    def check_session(request: Request):
+    # --- 2. SESSION CHECK (Helper to get User ID) ---
+    def get_current_user(request: Request):
         token = request.cookies.get("vanna_auth")
         if not token:
-            raise HTTPException(status_code=401, detail="Not authenticated")
+             # Try header
+             auth_header = request.headers.get('Authorization')
+             if auth_header and auth_header.startswith('Bearer '):
+                 token = auth_header.split(' ')[1]
         
+        if not token: raise HTTPException(status_code=401, detail="Not authenticated")
         try:
             payload = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
-            return {"status": "authenticated", "user": {"email": payload.get("sub"), "role": "admin"}}
-        except jwt.ExpiredSignatureError:
-            raise HTTPException(status_code=401, detail="Token expired")
-        except jwt.InvalidTokenError:
+            return payload.get("sub") # Returns email/id
+        except:
             raise HTTPException(status_code=401, detail="Invalid token")
 
-    # --- 3. LOGOUT ENDPOINT ---
+    @app.get("/api/me")
+    def check_session(request: Request):
+        user_id = get_current_user(request)
+        return {"status": "authenticated", "user": {"email": user_id, "role": "admin"}}
+
+    # --- 3. LOGOUT ---
     @app.post("/api/logout")
     def logout(response: Response):
         response.delete_cookie("vanna_auth")
         return {"status": "logged_out"}
 
-    # --- SCHEMA ENDPOINT ---
+    # --- 4. SCHEMA ENDPOINT (Now includes Relationships) ---
     @app.get("/api/schema")
     async def get_database_schema():
-        # ... (Keep your existing dynamic schema logic exactly as before) ...
-        sql = ""
+        class SimpleArgs:
+            def __init__(self, s): self.sql = s
+
+        # A. Fetch Tables & Columns
+        sql_tables = ""
         if Config.DB_TYPE == "postgres":
-             sql = f"""
-                SELECT table_schema as "TABLE_SCHEMA", 
-                       table_name as "TABLE_NAME", 
-                       column_name as "COLUMN_NAME", 
-                       data_type as "DATA_TYPE"
+             sql_tables = f"""
+                SELECT table_schema, table_name, column_name, data_type
                 FROM information_schema.columns 
                 WHERE table_schema IN ('dbo', 'analytics_analytics')
                 ORDER BY table_schema DESC, table_name, ordinal_position
             """
-        # ... (Include MySQL/MSSQL logic from previous step) ...
-        elif Config.DB_TYPE == "mysql":
-             sql = f"""SELECT TABLE_SCHEMA, TABLE_NAME, COLUMN_NAME, DATA_TYPE FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = '{Config.DB_NAME}' ORDER BY TABLE_NAME, ORDINAL_POSITION"""
-        else:
-             sql = f"""SELECT TABLE_SCHEMA, TABLE_NAME, COLUMN_NAME, DATA_TYPE FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_CATALOG = '{Config.DB_NAME}' AND TABLE_SCHEMA IN ('dbo', 'analytics_analytics') ORDER BY TABLE_SCHEMA DESC, TABLE_NAME, ORDINAL_POSITION"""
-
+        # ... (MSSQL/MySQL logic omitted for brevity, assumes Postgres for now) ...
+        
         try:
-            class SimpleArgs:
-                def __init__(self, s): self.sql = s
-            return await _fetch_schema_async(db_tool, SimpleArgs(sql))
+            tables_dict = await _fetch_tables_async(db_tool, SimpleArgs(sql_tables))
+            
+            # B. Fetch Relationships (Postgres Only implementation for now)
+            if Config.DB_TYPE == "postgres":
+                sql_rels = """
+                    SELECT
+                        tc.table_schema as "schema_name", 
+                        tc.table_name as "table_name", 
+                        kcu.column_name as "column_name",
+                        ccu.table_schema AS "foreign_schema",
+                        ccu.table_name AS "foreign_table",
+                        ccu.column_name AS "foreign_column"
+                    FROM information_schema.table_constraints AS tc
+                    JOIN information_schema.key_column_usage AS kcu
+                      ON tc.constraint_name = kcu.constraint_name
+                    JOIN information_schema.constraint_column_usage AS ccu
+                      ON ccu.constraint_name = tc.constraint_name
+                    WHERE tc.constraint_type = 'FOREIGN KEY'
+                      AND tc.table_schema IN ('dbo', 'analytics_analytics');
+                """
+                tables_dict = await _fetch_relationships_async(db_tool, SimpleArgs(sql_rels), tables_dict)
+
+            return {"tables": list(tables_dict.values())}
+
         except Exception as e:
             print(f"❌ Schema Fetch Error: {e}")
             return {"tables": [], "error": str(e)}
 
-    # --- PREFERENCES ENDPOINTS ---
+    # --- 5. PREFERENCES (User Scoped) ---
     class PrefRequest(BaseModel):
         key: str
         value: str
 
     @app.get("/api/preferences")
     def get_preferences(request: Request):
-        # We can now use the user ID from the token if we wanted to isolate prefs
-        return preference_store.get_prefs("admin_user")
+        user_id = get_current_user(request)
+        return preference_store.get_prefs(user_id)
 
     @app.post("/api/preferences")
-    def add_preference(pref: PrefRequest):
-        current = preference_store.get_prefs("admin_user")
+    def add_preference(pref: PrefRequest, request: Request):
+        user_id = get_current_user(request)
+        current = preference_store.get_prefs(user_id)
         current[pref.key] = pref.value
-        preference_store.update_prefs("admin_user", current)
+        preference_store.update_prefs(user_id, current)
         return {"status": "updated", "prefs": current}
 
     @app.delete("/api/preferences/{key}")
-    def delete_preference(key: str):
-        current = preference_store.get_prefs("admin_user")
+    def delete_preference(key: str, request: Request):
+        user_id = get_current_user(request)
+        current = preference_store.get_prefs(user_id)
         if key in current:
             del current[key]
-            preference_store.update_prefs("admin_user", current)
+            preference_store.update_prefs(user_id, current)
         return {"status": "deleted", "prefs": current}
 
     return CustomVannaServer(app)

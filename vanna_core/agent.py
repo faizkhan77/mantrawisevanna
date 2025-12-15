@@ -17,6 +17,7 @@ from vanna_core.factories.db_factory import DBFactory
 from vanna_core.memory import get_agent_memory
 from vanna_core.enrichers import DatabaseSchemaEnricher, DocumentationEnricher
 from vanna_core.config import Config
+from vanna_core.store import preference_store
 
 # --- GLOBAL SINGLETONS ---
 llm_service = LLMFactory.get_llm_service()
@@ -67,7 +68,19 @@ class DynamicSystemPromptBuilder(DefaultSystemPromptBuilder):
         # 5. Keep responses concise and professional.
         """
 
-        return base_prompt + db_specific_instructions + formatting_instructions
+        # INJECT USER PREFERENCES (Language, Currency, etc)
+        preference_instructions = ""
+        if user:
+            # We use the user's ID (email) to fetch prefs
+            prefs = preference_store.get_prefs(user.id)
+            if prefs:
+                preference_instructions = "\n# 👤 USER PREFERENCES (STRICTLY FOLLOW)\n"
+                for key, value in prefs.items():
+                    preference_instructions += f"- {key}: {value}\n"
+                
+                preference_instructions += "\nIMPORTANT: You must adapt your final response (language, currency, tone) to match these preferences exactly.\n"
+
+        return base_prompt + db_specific_instructions + formatting_instructions + preference_instructions
 
 def create_vanna_agent() -> Agent:
     tools = ToolRegistry()
@@ -79,6 +92,7 @@ def create_vanna_agent() -> Agent:
 
     schema_enricher = DatabaseSchemaEnricher(db_tool=db_tool)
     doc_enricher = DocumentationEnricher("database/documentation.md")
+    
     prompt_builder = DynamicSystemPromptBuilder()
 
     return Agent(

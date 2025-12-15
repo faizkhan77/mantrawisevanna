@@ -1,0 +1,12 @@
+column_name,data_type
+prefid,bigint
+profileid,bigint
+createdwhen,timestamp with time zone
+lastmodifiedwhen,timestamp with time zone
+preferencename,text
+preferencedescription,text
+preferencevalue,text
+details,text
+preferencesource,text
+preferencesourcepropertycode,text
+mergedfrom,bigint
