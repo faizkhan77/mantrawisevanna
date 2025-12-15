@@ -1,7 +1,7 @@
 import os
 import uvicorn
 from typing import Any, Dict
-from fastapi import FastAPI
+from fastapi import FastAPI, Response, Request
 from fastapi.middleware.cors import CORSMiddleware
 
 # Vanna Imports
@@ -73,15 +73,41 @@ def create_server() -> CustomVannaServer:
 
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=_get_cors_origins(),
-        allow_credentials=True,
+        allow_origins=["http://localhost:5173", "http://localhost:3000"], # Add your frontend URL explicitly
+        allow_credentials=True, # REQUIRED for Cookies
         allow_methods=["*"],
         allow_headers=["*"],
     )
 
-    # Register Vanna Chat Routes
+    #  Register Vanna Chat Routes
     chat_handler = ChatHandler(vanna_agent)
     register_chat_routes(app, chat_handler)
+
+    # --- AUTH ENDPOINT ---
+    class LoginRequest(BaseModel):
+        token: str
+
+    @app.post("/api/login")
+    def login(data: LoginRequest, response: Response):
+        """
+        Sets the httpOnly cookie so the Vanna Web Component works automatically.
+        """
+        # Validate against the same token used in user.py
+        ADMIN_TOKEN = os.getenv("ADMIN_API_KEY", "secret-admin-key-123")
+        
+        if data.token == ADMIN_TOKEN:
+            # Set Cookie
+            response.set_cookie(
+                key="vanna_auth",
+                value=data.token,
+                httponly=False, # Allow JS to see it if needed, or True for security
+                max_age=86400,
+                samesite="lax"
+            )
+            return {"status": "success", "role": "admin"}
+        else:
+            response.status_code = 401
+            return {"status": "error", "message": "Invalid token"}
 
     # --- Pydantic Model for Request ---
     class PrefRequest(BaseModel):

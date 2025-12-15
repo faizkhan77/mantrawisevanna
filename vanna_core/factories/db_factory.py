@@ -5,19 +5,45 @@ from sqlalchemy import create_engine, text
 # Vanna Tools
 from vanna.tools import RunSqlTool
 from vanna.integrations.mssql import MSSQLRunner
-# IMPORT THE NATIVE POSTGRES RUNNER
 from vanna.integrations.postgres import PostgresRunner
 from vanna_core.config import Config
 
-# --- 1. MSSQL WRAPPER (Handles Binary + SQLAlchemy) ---
+# --- 1. SAFE POSTGRES WRAPPER (Adds Logging) ---
+class SafePostgresRunner(PostgresRunner):
+    """
+    Wraps the native PostgresRunner to add debug logging.
+    """
+    async def run_sql(self, args, context=None) -> pd.DataFrame:
+        # Extract SQL string from the args object (Vanna 2.0 standard)
+        sql = args.sql if hasattr(args, 'sql') else args
+        
+        print(f"\n🚀 [DEBUG] Executing SQL:\n{sql}\n")
+
+        try:
+            # Call the parent class's run_sql
+            df = await super().run_sql(args, context)
+            
+            if df is not None:
+                print(f"✅ [DEBUG] Query returned {len(df)} rows.")
+            else:
+                print("⚠️ [DEBUG] Query returned None.")
+                
+            return df
+        except Exception as e:
+            print(f"❌ [DEBUG] SQL Execution Error: {e}")
+            # We re-raise so Vanna knows it failed
+            raise e
+
+# --- 2. SAFE MSSQL WRAPPER ---
 class SafeMSSQLRunner(MSSQLRunner):
     def __init__(self, engine):
         self.engine = engine
 
     async def run_sql(self, sql, context=None, *args, **kwargs) -> pd.DataFrame:
-        # Unpack Vanna 2.0 args object if present
         if hasattr(sql, 'sql'):
             sql = sql.sql
+
+        print(f"\n🚀 [DEBUG] Executing MSSQL:\n{sql}\n")
 
         try:
             with self.engine.connect() as conn:
@@ -34,10 +60,10 @@ class SafeMSSQLRunner(MSSQLRunner):
                                 df[col] = df[col].apply(lambda x: x.hex() if isinstance(x, bytes) else x)
             return df
         except Exception as e:
-            print(f"❌ MSSQL Execution Error: {e}")
+            print(f"❌ [DEBUG] MSSQL Error: {e}")
             raise e
 
-# --- 2. GENERIC WRAPPER (For MySQL) ---
+# --- 3. GENERIC WRAPPER (MySQL) ---
 class SafeGenericRunner:
     def __init__(self, engine):
         self.engine = engine
@@ -49,7 +75,7 @@ class SafeGenericRunner:
             with self.engine.connect() as conn:
                 return pd.read_sql(text(sql), conn)
         except Exception as e:
-            print(f"❌ SQL Execution Error: {e}")
+            print(f"❌ [DEBUG] Generic DB Error: {e}")
             raise e
 
 # --- FACTORY ---
@@ -58,10 +84,10 @@ class DBFactory:
     def get_db_tool():
         db_type = Config.DB_TYPE
         
-        # --- OPTION A: POSTGRESQL (Native Runner) ---
+        # --- OPTION A: POSTGRESQL ---
         if db_type == "postgres":
-            # Pass individual parameters exactly as PostgresRunner expects
-            runner = PostgresRunner(
+            # Use our Safe wrapper instead of the raw runner
+            runner = SafePostgresRunner(
                 host=Config.DB_HOST,
                 port=Config.DB_PORT,
                 database=Config.DB_NAME,
@@ -70,7 +96,7 @@ class DBFactory:
             )
             return RunSqlTool(sql_runner=runner)
 
-        # --- OPTION B: MSSQL (SQLAlchemy + ODBC) ---
+        # --- OPTION B: MSSQL ---
         elif db_type == "mssql":
             driver = Config.DB_DRIVER.replace(' ', '+')
             user = Config.DB_USER
@@ -87,7 +113,7 @@ class DBFactory:
             runner = SafeMSSQLRunner(engine=engine)
             return RunSqlTool(sql_runner=runner)
 
-        # --- OPTION C: MYSQL (SQLAlchemy + PyMySQL) ---
+        # --- OPTION C: MYSQL ---
         elif db_type == "mysql":
             password = urllib.parse.quote_plus(Config.DB_PASSWORD) if Config.DB_PASSWORD else ""
             url = f"mysql+pymysql://{Config.DB_USER}:{password}@{Config.DB_HOST}:{Config.DB_PORT}/{Config.DB_NAME}"

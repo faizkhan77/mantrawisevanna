@@ -11,11 +11,10 @@ from vanna.tools.agent_memory import (
 from vanna.core.system_prompt import DefaultSystemPromptBuilder
 from vanna.core.tool import ToolSchema
 from vanna.core.user import User
-
+from vanna_core.user import CookieUserResolver
 from vanna_core.factories.llm_factory import LLMFactory
 from vanna_core.factories.db_factory import DBFactory
 from vanna_core.memory import get_agent_memory
-from vanna_core.user import HeaderUserResolver
 from vanna_core.enrichers import DatabaseSchemaEnricher, DocumentationEnricher
 from vanna_core.config import Config
 
@@ -23,7 +22,7 @@ from vanna_core.config import Config
 llm_service = LLMFactory.get_llm_service()
 db_tool = DBFactory.get_db_tool()
 agent_memory = get_agent_memory()
-user_resolver = HeaderUserResolver()
+user_resolver = CookieUserResolver()
 
 # --- DYNAMIC PROMPT BUILDER ---
 class DynamicSystemPromptBuilder(DefaultSystemPromptBuilder):

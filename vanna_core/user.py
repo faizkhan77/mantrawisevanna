@@ -1,24 +1,24 @@
 import os
 from vanna.core.user import UserResolver, User, RequestContext
 
-# Define a simple hardcoded admin token for now (as requested)
-# In production, you would validate this against a DB or Auth0
+# Simple secret token for admin
 ADMIN_TOKEN = os.getenv("ADMIN_API_KEY", "secret-admin-key-123")
 
-class HeaderUserResolver(UserResolver):
+class CookieUserResolver(UserResolver):
     """
-    Resolves users based on the 'Authorization' header.
-    - If token matches ADMIN_TOKEN -> Admin User
-    - If no token/wrong token -> Guest User (Viewer)
+    Resolves users based on a 'vanna_auth' cookie.
+    Required because the Vanna Web Component uses cookies automatically.
     """
 
     async def resolve_user(self, request_context: RequestContext) -> User:
-        auth_header = request_context.get_header('Authorization')
-        token = ""
+        # 1. Try to get token from Cookie (Standard for Web Component)
+        token = request_context.get_cookie('vanna_auth')
         
-        # Extract Bearer token
-        if auth_header and auth_header.startswith('Bearer '):
-            token = auth_header.split(' ')[1]
+        # 2. Fallback to Header (For API testing tools like Postman)
+        if not token:
+            auth_header = request_context.get_header('Authorization')
+            if auth_header and auth_header.startswith('Bearer '):
+                token = auth_header.split(' ')[1]
 
         if token == ADMIN_TOKEN:
             return User(
@@ -32,6 +32,6 @@ class HeaderUserResolver(UserResolver):
             return User(
                 id="guest_user",
                 email="guest@mantrawise.com",
-                group_memberships=["viewer"],
+                group_memberships=["viewer"], # Guest can view but maybe not save
                 permissions=["read"]
             )
